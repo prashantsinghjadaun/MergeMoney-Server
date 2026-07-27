@@ -1,6 +1,7 @@
-# Expense App - Backend Server
+# MergeMoney Backend 
 
-Node.js and Express-based REST API server for the Pep Expense App. Handles user authentication, group management, expense tracking, and settlement calculations.
+
+MergeMoney Backend is a Node.js and Express.js REST API server that powers the MergeMoney platform. It provides secure authentication, group expense management, personal finance tracking, subscription handling, and settlement calculations.
 
 ## 📋 Table of Contents
 
