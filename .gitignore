@@ -28,4 +28,4 @@ dist-ssr
 .env
 
 node_modules
-.env
+.envrequest-logs.txt
