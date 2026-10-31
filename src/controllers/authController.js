@@ -59,40 +59,48 @@ const authController = {
     },
 
     register: async (request, response) => {
-        const { name, email, password } = request.body;
+        try {
+            const errors = validationResult(request);
+            if (!errors.isEmpty()) {
+                return response.status(400).json({
+                    message: errors.array()[0].msg,
+                    errors: errors.array()
+                });
+            }
 
-        if (!name || !email || !password) {
-            return response.status(400).json({
-                message: 'Name, Email, Password are required'
+            const { name, email, password } = request.body;
+
+            const existingUser = await userDao.findByEmail(email);
+            if (existingUser) {
+                return response.status(409).json({
+                    message: 'User with this email already exists'
+                });
+            }
+
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash(password, salt);
+
+            const newUser = await userDao.create({
+                name,
+                email,
+                password: hashedPassword
+            });
+
+            return response.status(201).json({
+                message: 'User registered successfully',
+                user: { id: newUser._id }
+            });
+        } catch (error) {
+            console.error('Registration error:', error);
+            if (error.code === 'USER_EXIST' || error.code === 11000) {
+                return response.status(409).json({
+                    message: 'User with this email already exists'
+                });
+            }
+            return response.status(500).json({
+                message: 'Internal server error'
             });
         }
-
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        userDao.create({
-            name: name,
-            email: email,
-            password: hashedPassword
-        })
-            .then(u => {
-                return response.status(200).json({
-                    message: 'User registered',
-                    user: { id: u._id }
-                });
-            })
-            .catch(error => {
-                if (error.code === 'USER_EXIST') {
-                    console.log(error);
-                    return response.status(400).json({
-                        message: 'User with the email already exist'
-                    });
-                } else {
-                    return response.status(500).json({
-                        message: "Internal server error"
-                    });
-                }
-            });
     },
 
     isUserLoggedIn: async (request, response) => {
@@ -100,19 +108,32 @@ const authController = {
             const token = request.cookies?.jwtToken;
 
             if (!token) {
-                return response.status(401).json({
-                    message: 'Unauthorized access'
+                // No token is a normal state for unauthenticated users, not an error.
+                return response.status(200).json({
+                    user: null,
+                    message: 'No active session'
                 });
             }
 
             jwt.verify(token, process.env.JWT_SECRET, (error, user) => {
                 if (error) {
-                    return response.status(401).json({
-                        message: 'Invalid token'
+                    // Token is invalid or expired — clear the stale cookie
+                    response.clearCookie('jwtToken', {
+                        httpOnly: true,
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: 'Lax',
+                        path: '/'
+                    });
+                    return response.status(200).json({
+                        user: null,
+                        message: 'Session expired'
                     });
                 } else {
                     response.json({
-                        user: user
+                        user: {
+                            ...user,
+                            _id: user._id || user.id
+                        }
                     });
                 }
 
@@ -127,7 +148,12 @@ const authController = {
 
     logout: async (request, response) => {
         try {
-            response.clearCookie('jwtToken');
+            response.clearCookie('jwtToken', {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'Lax',
+                path: '/'
+            });
             response.json({ message: 'Logout successfull' });
         } catch (error) {
             console.log(error);

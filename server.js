@@ -22,9 +22,22 @@ function logToFile(msg) {
 logToFile('');
 logToFile('[SERVER] Initializing...');
 
-mongoose.connect(process.env.MONGO_DB_CONNECTION_URL)
-    .then(() => logToFile('MongoDB Connected🚀'))
-    .catch((error) => logToFile('Error Connecting to Database: ' + error));
+mongoose.connection.on('connected', () => logToFile('MongoDB Connected🚀'));
+mongoose.connection.on('error', (err) => {
+    const safeMsg = String(err).replace(/mongodb(\+srv)?:\/\/[^@]+@/i, 'mongodb$1://***:***@');
+    logToFile('MongoDB connection error: ' + safeMsg);
+});
+mongoose.connection.on('disconnected', () => logToFile('MongoDB disconnected'));
+
+function connectWithRetry() {
+    mongoose.connect(process.env.MONGO_DB_CONNECTION_URL, { serverSelectionTimeoutMS: 5000 })
+        .catch((error) => {
+            const safeMsg = String(error).replace(/mongodb(\+srv)?:\/\/[^@]+@/i, 'mongodb$1://***:***@');
+            logToFile('Error Connecting to Database: ' + safeMsg);
+            setTimeout(connectWithRetry, 5000);
+        });
+}
+connectWithRetry();
 
 // CORS configuration to allow multiple origins
 const corsOption = {
