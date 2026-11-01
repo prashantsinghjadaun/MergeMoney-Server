@@ -1,6 +1,7 @@
 const Expense = require('../model/expense');
 const SettlementPayment = require('../model/settlementPayment');
 const User = require('../model/user');
+const Group = require('../model/group');
 
 const expenseDao = {
     createExpense: async (expenseData) => {
@@ -62,6 +63,7 @@ const expenseDao = {
 
     calculateGroupSettlement: async (groupId) => {
         try {
+            const group = await Group.findById(groupId);
             const expenses = await Expense.find({ groupId });
             const confirmedPayments = await SettlementPayment.find({
                 groupId,
@@ -75,6 +77,13 @@ const expenseDao = {
             // Step 1: Calculate each member's net balance.
             // Positive = they are owed money (creditor), Negative = they owe money (debtor).
             const balanceMap = {};
+
+            // Initialize all group members with zero balance
+            if (group?.membersEmail && Array.isArray(group.membersEmail)) {
+                group.membersEmail.forEach(email => {
+                    if (email) balanceMap[email] = 0;
+                });
+            }
 
             expenses.forEach(expense => {
                 const payer = expense.paidBy;
