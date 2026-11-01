@@ -1,4 +1,6 @@
 const Expense = require('../model/expense');
+const SettlementPayment = require('../model/settlementPayment');
+const User = require('../model/user');
 
 const expenseDao = {
     createExpense: async (expenseData) => {
@@ -61,8 +63,12 @@ const expenseDao = {
     calculateGroupSettlement: async (groupId) => {
         try {
             const expenses = await Expense.find({ groupId });
+            const confirmedPayments = await SettlementPayment.find({
+                groupId,
+                status: 'confirmed'
+            });
 
-            if (expenses.length === 0) {
+            if (expenses.length === 0 && confirmedPayments.length === 0) {
                 return { balances: [], settlements: [] };
             }
 
@@ -79,6 +85,13 @@ const expenseDao = {
                     // Each split member owes their share
                     balanceMap[split.memberEmail] = (balanceMap[split.memberEmail] || 0) - split.amountOwed;
                 });
+            });
+
+            // Adjust net balances for confirmed peer settlements:
+            // Payer transferred funds out (+ net balance), Payee received funds (- net balance)
+            confirmedPayments.forEach(payment => {
+                balanceMap[payment.payerEmail] = (balanceMap[payment.payerEmail] || 0) + payment.amount;
+                balanceMap[payment.payeeEmail] = (balanceMap[payment.payeeEmail] || 0) - payment.amount;
             });
 
             // Build the balances array for the frontend
@@ -111,6 +124,14 @@ const expenseDao = {
             debtors.sort((a, b) => b.amount - a.amount);
             creditors.sort((a, b) => b.amount - a.amount);
 
+            // Look up payee UPI details for the settlement suggestions
+            const creditorEmails = creditors.map(c => c.member);
+            const creditorUsers = await User.find({ email: { $in: creditorEmails } }, 'email name upiId');
+            const userMap = {};
+            creditorUsers.forEach(u => {
+                if (u.email) userMap[u.email.toLowerCase()] = u;
+            });
+
             const settlements = [];
             let di = 0;
             let ci = 0;
@@ -120,10 +141,15 @@ const expenseDao = {
                 const rounded = Math.round(transferAmount * 100) / 100;
 
                 if (rounded > 0) {
+                    const toEmail = creditors[ci].member;
+                    const payee = userMap[toEmail.toLowerCase()];
                     settlements.push({
                         from: debtors[di].member,
-                        to: creditors[ci].member,
-                        amount: rounded
+                        to: toEmail,
+                        amount: rounded,
+                        payeeName: payee?.name || toEmail,
+                        payeeUpiId: payee?.upiId || null,
+                        payeeHasUpi: Boolean(payee?.upiId && payee.upiId.trim().length > 0)
                     });
                 }
 

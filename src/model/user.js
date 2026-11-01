@@ -21,7 +21,8 @@ const userSchema = new mongoose.Schema({
     adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
     // Default to 1 to give free trail of creating 1 group
     credits: { type: Number, default: 1 },
-    subscription: { type: subscriptionSchema, required: false }
+    subscription: { type: subscriptionSchema, required: false },
+    upiId: { type: String, trim: true, required: false }
 });
 
 module.exports = mongoose.model('User', userSchema);
