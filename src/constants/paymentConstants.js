@@ -11,15 +11,19 @@ const PAISA_TO_CREDIT_MAPPING = {
 };
 
 const PLAN_IDS = {
-    UNLIMITED_MONTHLY: {
-        id: process.env.RAZORPAY_MONTHLY_PLAN_ID,
-        name: 'MergeMoney Unlimited Monthly',
-        totalBillingCycleCount: 12
+    get UNLIMITED_MONTHLY() {
+        return {
+            id: process.env.RAZORPAY_MONTHLY_PLAN_ID,
+            name: 'MergeMoney Unlimited Monthly',
+            totalBillingCycleCount: 12
+        };
     },
-    UNLIMITED_YEARLY: {
-        id: process.env.RAZORPAY_YEARLY_PLAN_ID,
-        name: 'MergeMoney Unlimited Yearly',
-        totalBillingCycleCount: 5
+    get UNLIMITED_YEARLY() {
+        return {
+            id: process.env.RAZORPAY_YEARLY_PLAN_ID,
+            name: 'MergeMoney Unlimited Yearly',
+            totalBillingCycleCount: 5
+        };
     },
 };
 

@@ -29,12 +29,37 @@ mongoose.connection.on('error', (err) => {
 });
 mongoose.connection.on('disconnected', () => logToFile('MongoDB disconnected'));
 
+const isProduction = process.env.NODE_ENV === 'production';
+
+let connectAttempts = 0;
 function connectWithRetry() {
-    mongoose.connect(process.env.MONGO_DB_CONNECTION_URL, { serverSelectionTimeoutMS: 5000 })
+    const primaryUrl = process.env.MONGO_DB_CONNECTION_URL;
+    const fallbackUrl = 'mongodb://127.0.0.1:27017/mergemoney';
+
+    // Strictly disallow local fallback in production environments
+    const canFallback = !isProduction &&
+        connectAttempts >= 2 &&
+        primaryUrl &&
+        !primaryUrl.includes('127.0.0.1') &&
+        !primaryUrl.includes('localhost');
+
+    const targetUrl = canFallback ? fallbackUrl : primaryUrl;
+
+    mongoose.connect(targetUrl, { serverSelectionTimeoutMS: 4000 })
+        .then(() => {
+            if (targetUrl === fallbackUrl) {
+                logToFile('MongoDB Connected locally (development fallback)🚀');
+            }
+        })
         .catch((error) => {
+            connectAttempts++;
             const safeMsg = String(error).replace(/mongodb(\+srv)?:\/\/[^@]+@/i, 'mongodb$1://***:***@');
-            logToFile('Error Connecting to Database: ' + safeMsg);
-            setTimeout(connectWithRetry, 5000);
+            if (isProduction) {
+                logToFile(`[PRODUCTION] Error Connecting to Primary Database (attempt ${connectAttempts}): ${safeMsg}. Localhost fallback disabled in production.`);
+            } else {
+                logToFile(`Error Connecting to Database (attempt ${connectAttempts}): ${safeMsg}`);
+            }
+            setTimeout(connectWithRetry, 3000);
         });
 }
 connectWithRetry();
@@ -63,7 +88,11 @@ const corsOption = {
 const app = express();
 
 app.use(cors(corsOption));
-app.use(express.json()); // Middleware
+app.use(express.json({
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    }
+})); // Middleware with raw-body preservation for webhooks
 app.use(cookieParser()); // Middleware
 
 app.use('/auth', authRoutes);

@@ -8,8 +8,26 @@ const usersController = {
       const email = request.user.email;
 
       const user = await userDao.findByEmail(email);
+      if (!user) {
+        return response.status(404).json({ message: 'User not found' });
+      }
 
-      return response.json({ user });
+      const safeUser = user.toObject ? user.toObject() : { ...user };
+      delete safeUser.password;
+
+      // Authoritatively resolve and attach planKey for frontend UI consistency
+      if (safeUser.subscription && safeUser.subscription.planId) {
+        if (!safeUser.subscription.planKey) {
+          const { PLAN_IDS } = require('../constants/paymentConstants');
+          if (safeUser.subscription.planId === PLAN_IDS.UNLIMITED_MONTHLY?.id || safeUser.subscription.planId === 'UNLIMITED_MONTHLY') {
+            safeUser.subscription.planKey = 'UNLIMITED_MONTHLY';
+          } else if (safeUser.subscription.planId === PLAN_IDS.UNLIMITED_YEARLY?.id || safeUser.subscription.planId === 'UNLIMITED_YEARLY') {
+            safeUser.subscription.planKey = 'UNLIMITED_YEARLY';
+          }
+        }
+      }
+
+      return response.json({ user: safeUser });
     } catch (error) {
       return response.status(500).json({ message: 'Internal server error' });
     }

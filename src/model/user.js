@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const subscriptionSchema = new mongoose.Schema({
     subscriptionId: { type: String }, // Razorpay subscription id
     planId: { type: String }, // PlanId to which user subscribed (monthly/yearly)
+    planKey: { type: String }, // Canonical plan key: 'UNLIMITED_MONTHLY' or 'UNLIMITED_YEARLY'
     status: { type: String }, // Status of the subscription (created, activated, authenticated, etc.)
     start: { type: Date }, // Start date of the subscription.
     end: { type: Date }, // End date of the subscription.
