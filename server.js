@@ -12,11 +12,34 @@ const paymentsRoutes = require('./src/routes/paymentsRoutes');
 const profileRoutes = require('./src/routes/profileRoutes');
 const expenseRoutes = require('./src/routes/expenseRoutes');
 
-// Clear old logs
-fs.writeFileSync('./request-logs.txt', '=== Server Started ===\n');
+// Clear old logs in development
+const isProduction = process.env.NODE_ENV === 'production';
+
+function sanitizeLogMessage(msg) {
+    return String(msg)
+        .replace(/mongodb(\+srv)?:\/\/[^@]+@/i, 'mongodb$1://***:***@')
+        .replace(/(password|secret|token|apiKey|api_secret|key_secret)=([^\s&]+)/gi, '$1=***')
+        .replace(/("?(password|secret|token|apiKey|api_secret|key_secret)"?\s*:\s*)"[^"]+"/gi, '$1"***"');
+}
+
 function logToFile(msg) {
-    fs.appendFileSync('./request-logs.txt', msg + '\n');
-    console.log(msg);
+    const sanitized = sanitizeLogMessage(msg);
+    if (!isProduction) {
+        try {
+            fs.appendFileSync('./request-logs.txt', sanitized + '\n');
+        } catch (e) {
+            // ignore file write errors
+        }
+    }
+    console.log(sanitized);
+}
+
+if (!isProduction) {
+    try {
+        fs.writeFileSync('./request-logs.txt', '=== Server Started ===\n');
+    } catch (e) {
+        // ignore
+    }
 }
 
 logToFile('');
@@ -24,12 +47,9 @@ logToFile('[SERVER] Initializing...');
 
 mongoose.connection.on('connected', () => logToFile('MongoDB Connected🚀'));
 mongoose.connection.on('error', (err) => {
-    const safeMsg = String(err).replace(/mongodb(\+srv)?:\/\/[^@]+@/i, 'mongodb$1://***:***@');
-    logToFile('MongoDB connection error: ' + safeMsg);
+    logToFile('MongoDB connection error: ' + String(err));
 });
 mongoose.connection.on('disconnected', () => logToFile('MongoDB disconnected'));
-
-const isProduction = process.env.NODE_ENV === 'production';
 
 let connectAttempts = 0;
 function connectWithRetry() {
@@ -64,17 +84,39 @@ function connectWithRetry() {
 }
 connectWithRetry();
 
-// CORS configuration to allow multiple origins
+// CORS configuration supporting CLIENT_URL, ALLOWED_ORIGINS and local development
+const defaultDevOrigins = [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174'
+];
+
+const parseOrigins = (str) => {
+    if (!str) return [];
+    return str
+        .split(',')
+        .map(o => o.trim().replace(/\/+$/, ''))
+        .filter(Boolean);
+};
+
+const configuredOrigins = [
+    ...parseOrigins(process.env.CLIENT_URL),
+    ...parseOrigins(process.env.ALLOWED_ORIGINS)
+];
+
+const allowedOrigins = Array.from(new Set([
+    ...configuredOrigins,
+    ...(!isProduction ? defaultDevOrigins : [])
+]));
+
 const corsOption = {
     origin: function (origin, callback) {
-        const allowedOrigins = [
-            'http://localhost:5173',
-            'http://localhost:5174',
-            'http://127.0.0.1:5173',
-            'http://127.0.0.1:5174'
-        ];
-        
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (!origin) {
+            return callback(null, true);
+        }
+        const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+        if (allowedOrigins.includes(normalizedOrigin)) {
             callback(null, true);
         } else {
             callback(new Error('Not allowed by CORS'));
@@ -102,6 +144,7 @@ app.use('/payments', paymentsRoutes);
 app.use('/profile', profileRoutes);
 app.use('/expenses', expenseRoutes);
 
-app.listen(5001, () => {
-    logToFile('Server is running on port 5001');
+const PORT = process.env.PORT || 5001;
+app.listen(PORT, () => {
+    logToFile(`Server is running on port ${PORT}`);
 });

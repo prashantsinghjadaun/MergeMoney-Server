@@ -4,6 +4,14 @@ const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const { validationResult } = require('express-validator');
 
+const isProduction = process.env.NODE_ENV === 'production';
+const getCookieOptions = () => ({
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    path: '/'
+});
+
 const authController = {
     login: async (request, response) => {
         const errors = validationResult(request);
@@ -35,12 +43,7 @@ const authController = {
                     { expiresIn: '1h' }
                 );
 
-                response.cookie('jwtToken', token, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'Lax',
-                    path: '/'
-                });
+                response.cookie('jwtToken', token, getCookieOptions());
                 return response.status(200).json({
                     message: 'User authenticated',
                     user: user
@@ -118,12 +121,7 @@ const authController = {
             jwt.verify(token, process.env.JWT_SECRET, (error, user) => {
                 if (error) {
                     // Token is invalid or expired — clear the stale cookie
-                    response.clearCookie('jwtToken', {
-                        httpOnly: true,
-                        secure: process.env.NODE_ENV === 'production',
-                        sameSite: 'Lax',
-                        path: '/'
-                    });
+                    response.clearCookie('jwtToken', getCookieOptions());
                     return response.status(200).json({
                         user: null,
                         message: 'Session expired'
@@ -148,12 +146,7 @@ const authController = {
 
     logout: async (request, response) => {
         try {
-            response.clearCookie('jwtToken', {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'Lax',
-                path: '/'
-            });
+            response.clearCookie('jwtToken', getCookieOptions());
             response.json({ message: 'Logout successfull' });
         } catch (error) {
             console.log(error);
@@ -249,12 +242,7 @@ const authController = {
                 );
 
                 console.log('Setting cookie and returning response...');
-                response.cookie('jwtToken', token, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'Lax',
-                    path: '/'
-                });
+                response.cookie('jwtToken', token, getCookieOptions());
                 return response.status(200).json({
                     message: 'User authenticated',
                     user: user

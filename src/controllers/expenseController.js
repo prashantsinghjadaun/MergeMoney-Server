@@ -1,6 +1,23 @@
 const expenseDao = require('../dao/expenseDao');
-const groupDao = require('../dao/groupDao');
+const Group = require('../model/group');
 const { validationResult } = require('express-validator');
+
+const isGroupMember = (group, email) => {
+    if (!group || !email) return false;
+    const lower = email.toLowerCase();
+    const isAdmin = group.adminEmail && group.adminEmail.toLowerCase() === lower;
+    const isMember = Array.isArray(group.membersEmail) && group.membersEmail.some(m => m && m.toLowerCase() === lower);
+    return Boolean(isAdmin || isMember);
+};
+
+const canModifyExpense = (group, expense, email) => {
+    if (!group || !expense || !email) return false;
+    const lower = email.toLowerCase();
+    const isAdmin = group.adminEmail && group.adminEmail.toLowerCase() === lower;
+    const isCreator = expense.createdBy && expense.createdBy.toLowerCase() === lower;
+    const isPayer = expense.paidBy && expense.paidBy.toLowerCase() === lower;
+    return Boolean(isAdmin || isCreator || isPayer);
+};
 
 const expenseController = {
     /**
@@ -21,6 +38,19 @@ const expenseController = {
 
             const user = request.user;
             const { groupId, title, description, amount, currency, paidBy, splits } = request.body;
+
+            const group = await Group.findById(groupId);
+            if (!group) {
+                return response.status(404).json({
+                    message: 'Group not found'
+                });
+            }
+
+            if (!isGroupMember(group, user.email)) {
+                return response.status(403).json({
+                    message: 'Access denied: You are not a member of this group'
+                });
+            }
 
             // Validate that paidBy exists in splits
             const paidBySplit = splits.find(s => s.memberEmail === paidBy);
@@ -70,6 +100,19 @@ const expenseController = {
         try {
             const { groupId } = request.params;
 
+            const group = await Group.findById(groupId);
+            if (!group) {
+                return response.status(404).json({
+                    message: 'Group not found'
+                });
+            }
+
+            if (!isGroupMember(group, request.user.email)) {
+                return response.status(403).json({
+                    message: 'Access denied: You are not a member of this group'
+                });
+            }
+
             const expenses = await expenseDao.getExpensesByGroup(groupId);
 
             return response.status(200).json({
@@ -99,6 +142,13 @@ const expenseController = {
                 });
             }
 
+            const group = await Group.findById(expense.groupId);
+            if (!group || !isGroupMember(group, request.user.email)) {
+                return response.status(403).json({
+                    message: 'Access denied: You are not a member of this group'
+                });
+            }
+
             return response.status(200).json(expense);
         } catch (error) {
             console.error(error);
@@ -117,6 +167,32 @@ const expenseController = {
         try {
             const { expenseId } = request.params;
             const { title, description, amount, currency, paidBy, splits } = request.body;
+
+            const expense = await expenseDao.getExpenseById(expenseId);
+            if (!expense) {
+                return response.status(404).json({
+                    message: 'Expense not found'
+                });
+            }
+
+            const group = await Group.findById(expense.groupId);
+            if (!group) {
+                return response.status(404).json({
+                    message: 'Group not found'
+                });
+            }
+
+            if (!isGroupMember(group, request.user.email)) {
+                return response.status(403).json({
+                    message: 'Access denied: You are not a member of this group'
+                });
+            }
+
+            if (!canModifyExpense(group, expense, request.user.email)) {
+                return response.status(403).json({
+                    message: 'Access denied: Only the expense creator, payer, or group admin can update this expense'
+                });
+            }
 
             // Validate splits sum
             if (splits) {
@@ -164,6 +240,32 @@ const expenseController = {
         try {
             const { expenseId } = request.params;
 
+            const expense = await expenseDao.getExpenseById(expenseId);
+            if (!expense) {
+                return response.status(404).json({
+                    message: 'Expense not found'
+                });
+            }
+
+            const group = await Group.findById(expense.groupId);
+            if (!group) {
+                return response.status(404).json({
+                    message: 'Group not found'
+                });
+            }
+
+            if (!isGroupMember(group, request.user.email)) {
+                return response.status(403).json({
+                    message: 'Access denied: You are not a member of this group'
+                });
+            }
+
+            if (!canModifyExpense(group, expense, request.user.email)) {
+                return response.status(403).json({
+                    message: 'Access denied: Only the expense creator, payer, or group admin can delete this expense'
+                });
+            }
+
             const deleted = await expenseDao.deleteExpense(expenseId);
             if (!deleted) {
                 return response.status(404).json({
@@ -192,6 +294,19 @@ const expenseController = {
         try {
             const { groupId } = request.params;
 
+            const group = await Group.findById(groupId);
+            if (!group) {
+                return response.status(404).json({
+                    message: 'Group not found'
+                });
+            }
+
+            if (!isGroupMember(group, request.user.email)) {
+                return response.status(403).json({
+                    message: 'Access denied: You are not a member of this group'
+                });
+            }
+
             const settlement = await expenseDao.calculateGroupSettlement(groupId);
 
             return response.status(200).json({
@@ -206,51 +321,14 @@ const expenseController = {
     },
 
     /**
-     * Settle a group - marks all debts as paid
+     * Settle a group - deprecated legacy bypass
      * @route POST /expenses/settle/:groupId
      * @access Private
      */
     settleGroup: async (request, response) => {
-        try {
-            const { groupId } = request.params;
-            const user = request.user;
-
-            // Get the group
-            const group = await groupDao.getGroupById(groupId);
-            if (!group) {
-                return response.status(404).json({
-                    message: 'Group not found'
-                });
-            }
-
-            // Only admin can settle
-            if (group.adminEmail !== user.email) {
-                return response.status(403).json({
-                    message: 'Only group admin can settle the group'
-                });
-            }
-
-            // Update group payment status
-            const updatedGroup = await groupDao.updateGroup({
-                groupId,
-                paymentStatus: {
-                    amount: 0,
-                    currency: group.paymentStatus?.currency || 'INR',
-                    date: Date.now(),
-                    isPaid: true
-                }
-            });
-
-            return response.status(200).json({
-                message: 'Group settled successfully',
-                group: updatedGroup
-            });
-        } catch (error) {
-            console.error(error);
-            return response.status(500).json({
-                message: 'Error settling group'
-            });
-        }
+        return response.status(410).json({
+            message: 'Direct group settlement has been deprecated. Please settle balances individually using peer-to-peer UPI payments with creditor confirmation.'
+        });
     }
 };
 
