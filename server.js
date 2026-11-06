@@ -84,7 +84,7 @@ function connectWithRetry() {
 }
 connectWithRetry();
 
-// CORS configuration supporting CLIENT_URL, ALLOWED_ORIGINS and local development
+// CORS configuration supporting CLIENT_URL, ALLOWED_ORIGINS, Vercel deployments and local development
 const defaultDevOrigins = [
     'http://localhost:5173',
     'http://localhost:5174',
@@ -105,18 +105,33 @@ const configuredOrigins = [
     ...parseOrigins(process.env.ALLOWED_ORIGINS)
 ];
 
-const allowedOrigins = Array.from(new Set([
+const staticAllowedOrigins = Array.from(new Set([
     ...configuredOrigins,
+    'https://merge-money-client.vercel.app',
+    'https://merge-money-client-6fvycajsa-jadaunprashant-777-6157s-projects.vercel.app',
     ...(!isProduction ? defaultDevOrigins : [])
 ]));
 
+const isAllowedOrigin = (origin) => {
+    if (!origin) return true;
+    const normalized = origin.trim().replace(/\/+$/, '');
+    if (staticAllowedOrigins.includes(normalized)) {
+        return true;
+    }
+    // Allow official Vercel deployments scoped to this project
+    if (/^https:\/\/merge-money-client(-[a-z0-9]+)*-jadaunprashant-777-6157s-projects\.vercel\.app$/i.test(normalized)) {
+        return true;
+    }
+    // Allow localhost/127.0.0.1 development ports when not in production
+    if (!isProduction && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)) {
+        return true;
+    }
+    return false;
+};
+
 const corsOption = {
     origin: function (origin, callback) {
-        if (!origin) {
-            return callback(null, true);
-        }
-        const normalizedOrigin = origin.trim().replace(/\/+$/, '');
-        if (allowedOrigins.includes(normalizedOrigin)) {
+        if (isAllowedOrigin(origin)) {
             callback(null, true);
         } else {
             callback(new Error('Not allowed by CORS'));

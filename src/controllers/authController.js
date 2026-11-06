@@ -43,10 +43,13 @@ const authController = {
                     { expiresIn: '1h' }
                 );
 
+                const safeUser = user.toObject ? user.toObject() : { ...user };
+                delete safeUser.password;
+
                 response.cookie('jwtToken', token, getCookieOptions());
                 return response.status(200).json({
                     message: 'User authenticated',
-                    user: user
+                    user: safeUser
                 });
             } else {
                 return response.status(400).json({
@@ -242,10 +245,13 @@ const authController = {
                 );
 
                 console.log('Setting cookie and returning response...');
+                const safeUser = user.toObject ? user.toObject() : { ...user };
+                delete safeUser.password;
+
                 response.cookie('jwtToken', token, getCookieOptions());
                 return response.status(200).json({
                     message: 'User authenticated',
-                    user: user
+                    user: safeUser
                 });
             } catch (dbError) {
                 console.error('Database error in Google SSO:', dbError.message);
